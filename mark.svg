@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="笼卡管理">
+  <rect width="512" height="512" rx="72" fill="#146c5a"/>
+  <rect x="88" y="76" width="336" height="360" rx="24" fill="#ffffff"/>
+  <rect x="88" y="76" width="336" height="92" rx="24" fill="#d3a42b"/>
+  <rect x="88" y="144" width="336" height="24" fill="#d3a42b"/>
+  <path d="M128 222h256M128 294h256M128 366h256M224 190v216M320 190v216" fill="none" stroke="#146c5a" stroke-width="18" stroke-linecap="round"/>
+</svg>

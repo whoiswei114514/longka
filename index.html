@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#146c5a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="笼卡管理">
+  <title>笼卡管理</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="shell">
+    <section id="lock-view" class="lock-view" aria-labelledby="lock-title">
+      <div class="lock-panel">
+        <img class="brand-mark" src="mark.svg" alt="">
+        <div>
+          <h1 id="lock-title">笼卡管理</h1>
+          <p id="lock-copy" class="muted">输入存储密码</p>
+        </div>
+        <label class="field wide">
+          <span>存储密码</span>
+          <input id="password" type="password" autocomplete="current-password" minlength="4">
+        </label>
+        <label id="confirm-password-field" class="field wide hidden">
+          <span>确认密码</span>
+          <input id="confirm-password" type="password" autocomplete="new-password" minlength="4">
+        </label>
+        <p id="lock-error" class="form-error" role="alert"></p>
+        <button id="unlock-button" class="primary wide" type="button">解锁</button>
+      </div>
+    </section>
+
+    <section id="app-view" class="app-view hidden">
+      <header class="app-header">
+        <div class="brand-row">
+          <img class="header-mark" src="mark.svg" alt="">
+          <div>
+            <h1>笼卡管理</h1>
+            <p id="header-location" class="muted">未选择笼位</p>
+          </div>
+        </div>
+        <button id="lock-button" class="quiet" type="button">锁定</button>
+      </header>
+
+      <nav class="tabs" aria-label="主视图">
+        <button class="tab active" type="button" data-view="entry">录入</button>
+        <button class="tab" type="button" data-view="records">笼卡 <span id="record-count">0</span></button>
+      </nav>
+
+      <section id="entry-view" class="view active" aria-labelledby="entry-title">
+        <div class="section-head">
+          <h2 id="entry-title">新建笼卡</h2>
+          <button id="clear-form-button" class="quiet" type="button">清空</button>
+        </div>
+
+        <form id="entry-form" novalidate>
+          <fieldset class="location-fields">
+            <legend>笼位</legend>
+            <label class="field">
+              <span>房号</span>
+              <input id="room" name="room" maxlength="32" autocomplete="off" required>
+            </label>
+            <label class="field">
+              <span>笼架号</span>
+              <input id="rack" name="rack" maxlength="32" autocomplete="off" required>
+            </label>
+            <label class="field">
+              <span>笼号</span>
+              <input id="cage" name="cage" maxlength="32" autocomplete="off" required>
+            </label>
+          </fieldset>
+
+          <div class="capture-row">
+            <label class="capture-button" for="photo-input">拍摄笼卡</label>
+            <input id="photo-input" class="visually-hidden" type="file" accept="image/*" capture="environment">
+            <button id="ocr-button" class="quiet" type="button" disabled>本地 OCR</button>
+            <button id="remove-photo-button" class="quiet hidden" type="button">移除照片</button>
+          </div>
+          <div id="ocr-panel" class="ocr-panel hidden" aria-live="polite">
+            <div class="ocr-status-row">
+              <span>PP-OCRv6 Small</span>
+              <span id="ocr-status">等待识别</span>
+            </div>
+            <progress id="ocr-progress" max="1"></progress>
+            <details id="ocr-details" class="hidden">
+              <summary>识别文本</summary>
+              <pre id="ocr-raw-text"></pre>
+            </details>
+          </div>
+          <div id="photo-preview-wrap" class="photo-preview hidden">
+            <img id="photo-preview" alt="本次笼卡照片预览">
+          </div>
+
+          <div class="record-fields">
+            <label class="field wide">
+              <span>样品编号</span>
+              <input id="sample-number" name="sampleNumber" maxlength="64" autocomplete="off" required>
+            </label>
+            <label class="field wide">
+              <span>样品名称</span>
+              <input id="sample-name" name="sampleName" maxlength="80" autocomplete="off" required>
+            </label>
+            <label class="field wide">
+              <span>动物编号</span>
+              <input id="animal-number" name="animalNumber" maxlength="40" inputmode="numeric" autocomplete="off" required>
+            </label>
+          </div>
+
+          <p id="form-error" class="form-error" role="alert"></p>
+          <button id="save-button" class="primary wide" type="submit">保存笼卡</button>
+        </form>
+      </section>
+
+      <section id="records-view" class="view" aria-labelledby="records-title">
+        <div class="section-head">
+          <h2 id="records-title">已录入笼卡</h2>
+          <button id="new-record-button" class="primary compact" type="button">新建</button>
+        </div>
+        <label class="search-field">
+          <span class="visually-hidden">检索笼卡</span>
+          <input id="record-search" type="search" placeholder="检索动物编号、样品或笼位" autocomplete="off">
+        </label>
+        <div id="empty-records" class="empty-state">暂无笼卡</div>
+        <div id="record-list" class="record-list"></div>
+      </section>
+
+      <footer class="app-footer">
+        <span>本机加密存储</span>
+        <span id="storage-size">0 B</span>
+      </footer>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="config.js"></script>
+  <script src="app.js" defer></script>
+</body>
+</html>
