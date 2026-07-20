@@ -6,7 +6,12 @@
   const COOKIE_MAX_AGE = 60 * 60 * 24 * 365 * 3;
   const COOKIE_CHUNK_SIZE = 2800;
   const MAX_COOKIE_CHUNKS = 24;
-  const PBKDF2_ITERATIONS = 210000;
+  const STORAGE_VERSION = 2;
+  const KEY_DB_NAME = "longka_device_keys";
+  const KEY_DB_VERSION = 1;
+  const KEY_STORE_NAME = "keys";
+  const ROOT_KEY_ID = "hkdf_root_v2";
+  const KEY_CONTEXT = "longka/cookie-storage/v2";
   const textEncoder = new TextEncoder();
   const textDecoder = new TextDecoder();
 
@@ -23,15 +28,9 @@
   };
 
   const elements = {
-    lockView: byId("lock-view"),
+    startupView: byId("startup-view"),
+    startupStatus: byId("startup-status"),
     appView: byId("app-view"),
-    lockCopy: byId("lock-copy"),
-    password: byId("password"),
-    confirmPassword: byId("confirm-password"),
-    confirmPasswordField: byId("confirm-password-field"),
-    lockError: byId("lock-error"),
-    unlockButton: byId("unlock-button"),
-    lockButton: byId("lock-button"),
     headerLocation: byId("header-location"),
     entryTitle: byId("entry-title"),
     form: byId("entry-form"),
@@ -67,31 +66,48 @@
 
   initialize();
 
-  function initialize() {
-    if (!window.crypto || !window.crypto.subtle) {
-      elements.lockError.textContent = "当前浏览器不支持加密存储";
-      elements.unlockButton.disabled = true;
-      return;
-    }
-    configureLockView();
+  async function initialize() {
     bindEvents();
     applyLocation(state.queryLocation);
-    elements.password.focus();
-  }
-
-  function configureLockView() {
-    const setup = !readMeta();
-    elements.confirmPasswordField.classList.toggle("hidden", !setup);
-    elements.lockCopy.textContent = setup ? "首次使用，请设置存储密码" : "输入存储密码";
-    elements.unlockButton.textContent = setup ? "创建加密存储" : "解锁";
-    elements.password.autocomplete = setup ? "new-password" : "current-password";
+    if (!window.crypto || !window.crypto.subtle || !window.indexedDB) {
+      elements.startupStatus.textContent = "当前浏览器不支持本机加密存储";
+      return;
+    }
+    try {
+      const storedMeta = readMeta();
+      if (readCookie(META_COOKIE) && !storedMeta) {
+        clearEncryptedStorage();
+      }
+      const root = await getOrCreateRootKey();
+      let meta = readMeta();
+      if (storedMeta && root.created) {
+        clearEncryptedStorage();
+        meta = null;
+      }
+      if (meta) {
+        state.salt = base64ToBytes(meta.salt);
+        state.key = await deriveKey(root.key, state.salt);
+        state.records = await decryptRecords(meta);
+      } else {
+        state.salt = crypto.getRandomValues(new Uint8Array(16));
+        state.key = await deriveKey(root.key, state.salt);
+        state.records = [];
+        await persistRecords();
+      }
+      elements.startupView.classList.add("hidden");
+      elements.appView.classList.remove("hidden");
+      resetForm(true);
+      renderRecords();
+    } catch (error) {
+      state.key = null;
+      state.records = [];
+      elements.startupStatus.textContent = error && error.message
+        ? `无法打开本机存储：${error.message}`
+        : "无法打开本机存储";
+    }
   }
 
   function bindEvents() {
-    elements.unlockButton.addEventListener("click", unlock);
-    elements.password.addEventListener("keydown", submitOnEnter);
-    elements.confirmPassword.addEventListener("keydown", submitOnEnter);
-    elements.lockButton.addEventListener("click", lock);
     elements.form.addEventListener("submit", saveRecord);
     elements.clearFormButton.addEventListener("click", () => resetForm(true));
     elements.newRecordButton.addEventListener("click", () => {
@@ -109,64 +125,6 @@
     [elements.room, elements.rack, elements.cage].forEach((input) => {
       input.addEventListener("input", updateHeaderLocation);
     });
-  }
-
-  function submitOnEnter(event) {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      unlock();
-    }
-  }
-
-  async function unlock() {
-    const password = elements.password.value;
-    const meta = readMeta();
-    elements.lockError.textContent = "";
-    elements.unlockButton.disabled = true;
-    try {
-      if (!meta) {
-        if (password.length < 4) {
-          throw new Error("存储密码至少需要 4 个字符");
-        }
-        if (password !== elements.confirmPassword.value) {
-          throw new Error("两次输入的密码不一致");
-        }
-        state.salt = crypto.getRandomValues(new Uint8Array(16));
-        state.key = await deriveKey(password, state.salt);
-        state.records = [];
-        await persistRecords();
-      } else {
-        state.salt = base64ToBytes(meta.salt);
-        state.key = await deriveKey(password, state.salt);
-        state.records = await decryptRecords(meta);
-      }
-      elements.password.value = "";
-      elements.confirmPassword.value = "";
-      elements.lockView.classList.add("hidden");
-      elements.appView.classList.remove("hidden");
-      resetForm(true);
-      renderRecords();
-    } catch (error) {
-      state.key = null;
-      state.records = [];
-      elements.lockError.textContent = meta ? "密码错误或存储数据已损坏" : error.message;
-    } finally {
-      elements.unlockButton.disabled = false;
-    }
-  }
-
-  function lock() {
-    state.key = null;
-    state.salt = null;
-    state.records = [];
-    state.editingId = null;
-    clearPhoto();
-    elements.appView.classList.add("hidden");
-    elements.lockView.classList.remove("hidden");
-    elements.password.value = "";
-    elements.lockError.textContent = "";
-    configureLockView();
-    elements.password.focus();
   }
 
   async function saveRecord(event) {
@@ -514,23 +472,20 @@
     };
   }
 
-  async function deriveKey(password, salt) {
-    const material = await crypto.subtle.importKey(
-      "raw", textEncoder.encode(password), "PBKDF2", false, ["deriveKey"]
-    );
+  async function deriveKey(rootKey, salt) {
     return crypto.subtle.deriveKey({
-      name: "PBKDF2",
+      name: "HKDF",
       salt,
-      iterations: PBKDF2_ITERATIONS,
+      info: textEncoder.encode(KEY_CONTEXT),
       hash: "SHA-256"
-    }, material, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+    }, rootKey, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
   }
 
   async function persistRecords() {
     if (!state.key || !state.salt) {
       throw new Error("加密存储尚未解锁");
     }
-    const payload = JSON.stringify({ version: 1, records: state.records });
+    const payload = JSON.stringify({ version: STORAGE_VERSION, records: state.records });
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const encrypted = new Uint8Array(await crypto.subtle.encrypt(
       { name: "AES-GCM", iv }, state.key, textEncoder.encode(payload)
@@ -546,7 +501,7 @@
     for (let index = chunks.length; index < previousCount; index += 1) {
       deleteCookie(`${DATA_COOKIE_PREFIX}${index}`);
     }
-    const meta = { version: 1, salt: bytesToBase64(state.salt), count: chunks.length };
+    const meta = { version: STORAGE_VERSION, salt: bytesToBase64(state.salt), count: chunks.length };
     setCookie(META_COOKIE, encodeURIComponent(JSON.stringify(meta)));
     const storedMeta = readMeta();
     if (!storedMeta || storedMeta.count !== chunks.length || readEnvelope(storedMeta) !== envelope) {
@@ -565,7 +520,7 @@
     const encrypted = base64ToBytes(envelope.slice(separator + 1));
     const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, state.key, encrypted);
     const parsed = JSON.parse(textDecoder.decode(decrypted));
-    if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.records)) {
+    if (!parsed || parsed.version !== STORAGE_VERSION || !Array.isArray(parsed.records)) {
       throw new Error("存储数据版本不受支持");
     }
     elements.storageSize.textContent = formatBytes(envelope.length);
@@ -596,7 +551,7 @@
     }
     try {
       const meta = JSON.parse(decodeURIComponent(value));
-      if (meta.version !== 1 || !meta.salt || !Number.isInteger(meta.count)
+      if (meta.version !== STORAGE_VERSION || !meta.salt || !Number.isInteger(meta.count)
           || meta.count < 1 || meta.count > MAX_COOKIE_CHUNKS) {
         return null;
       }
@@ -616,6 +571,104 @@
       value += chunk;
     }
     return value;
+  }
+
+  function clearEncryptedStorage() {
+    deleteCookie(META_COOKIE);
+    for (let index = 0; index < MAX_COOKIE_CHUNKS; index += 1) {
+      deleteCookie(`${DATA_COOKIE_PREFIX}${index}`);
+    }
+  }
+
+  async function getOrCreateRootKey() {
+    const database = await openKeyDatabase();
+    try {
+      const existing = await readDatabaseValue(database, ROOT_KEY_ID);
+      if (isValidRootKey(existing)) {
+        return { key: existing, created: false };
+      }
+      const rootBytes = crypto.getRandomValues(new Uint8Array(32));
+      let rootKey;
+      try {
+        rootKey = await crypto.subtle.importKey(
+          "raw", rootBytes, "HKDF", false, ["deriveKey"]
+        );
+      } finally {
+        rootBytes.fill(0);
+      }
+      if (existing) {
+        await writeDatabaseValue(database, ROOT_KEY_ID, rootKey);
+        return { key: rootKey, created: true };
+      }
+      try {
+        await addDatabaseValue(database, ROOT_KEY_ID, rootKey);
+        return { key: rootKey, created: true };
+      } catch (error) {
+        if (!error || error.name !== "ConstraintError") {
+          throw error;
+        }
+        const concurrentKey = await readDatabaseValue(database, ROOT_KEY_ID);
+        if (!isValidRootKey(concurrentKey)) {
+          throw new Error("本机密钥初始化冲突");
+        }
+        return { key: concurrentKey, created: true };
+      }
+    } finally {
+      database.close();
+    }
+  }
+
+  function isValidRootKey(value) {
+    return value instanceof CryptoKey
+      && value.type === "secret"
+      && value.extractable === false
+      && value.algorithm.name === "HKDF"
+      && value.usages.length === 1
+      && value.usages[0] === "deriveKey";
+  }
+
+  function openKeyDatabase() {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(KEY_DB_NAME, KEY_DB_VERSION);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        if (!database.objectStoreNames.contains(KEY_STORE_NAME)) {
+          database.createObjectStore(KEY_STORE_NAME);
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error("无法打开密钥数据库"));
+      request.onblocked = () => reject(new Error("密钥数据库被其他页面占用"));
+    });
+  }
+
+  function readDatabaseValue(database, id) {
+    return new Promise((resolve, reject) => {
+      const request = database.transaction(KEY_STORE_NAME, "readonly")
+        .objectStore(KEY_STORE_NAME).get(id);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error("无法读取本机密钥"));
+    });
+  }
+
+  function writeDatabaseValue(database, id, value) {
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction(KEY_STORE_NAME, "readwrite");
+      transaction.objectStore(KEY_STORE_NAME).put(value, id);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error || new Error("无法保存本机密钥"));
+      transaction.onabort = () => reject(transaction.error || new Error("无法保存本机密钥"));
+    });
+  }
+
+  function addDatabaseValue(database, id, value) {
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction(KEY_STORE_NAME, "readwrite");
+      transaction.objectStore(KEY_STORE_NAME).add(value, id);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error || new Error("无法保存本机密钥"));
+      transaction.onabort = () => reject(transaction.error || new Error("无法保存本机密钥"));
+    });
   }
 
   function setCookie(name, value) {

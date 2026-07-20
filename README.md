@@ -17,7 +17,9 @@ https://whoiswei114514.github.io/longka/?v=1&room=1-1&rack=2&cage=0001
 - `cage`：笼号
 - 同时兼容短参数 `r`、`k`、`c`
 
-数据仅保存在当前浏览器 Cookie 中。用户密码通过 PBKDF2-SHA256 派生 AES-256-GCM 密钥；Cookie 中只有盐值、随机 IV 和密文分片，不保存密码或明文笼卡数据。照片只做本次预览，不写入 Cookie。
+笼卡数据仅保存在当前浏览器 Cookie 中。首次打开时，网页会在本机无感生成一个不可导出的 HKDF 根密钥并保存到 IndexedDB；后续自动使用根密钥和 Cookie 中的随机盐派生 AES-256-GCM 主密钥。Cookie 中只有盐值、随机 IV 和密文分片，不保存密钥或明文笼卡数据。根密钥不能被网页代码导出，照片只做本次预览，不写入 Cookie。
+
+清除该站点的 Cookie 或 IndexedDB 会使本机数据无法恢复。旧版密码加密存储不会要求输入密码，升级后会自动初始化为新版本机密钥存储。
 
 `config.js` 中的 `mimoApiKey` 当前为空，网页不会调用 Mimo API。
 

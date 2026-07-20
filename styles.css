@@ -93,7 +93,7 @@ h2 {
   background: var(--surface);
 }
 
-.lock-view {
+.startup-view {
   min-height: 100vh;
   min-height: 100dvh;
   display: grid;
@@ -101,22 +101,35 @@ h2 {
   padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
 }
 
-.lock-panel {
+.startup-panel {
   width: min(100%, 420px);
   margin: 0 auto;
-  padding: 24px;
-  display: grid;
-  grid-template-columns: 56px 1fr;
-  gap: 18px 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
 .brand-mark {
+  flex: 0 0 auto;
   width: 56px;
   height: 56px;
-  grid-row: span 1;
+}
+
+.startup-spinner {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: startup-spin 700ms linear infinite;
+}
+
+@keyframes startup-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .muted {
@@ -517,9 +530,6 @@ fieldset {
     grid-template-columns: 1fr;
   }
 
-  .lock-panel {
-    padding: 20px;
-  }
 }
 
 @media (min-width: 761px) {

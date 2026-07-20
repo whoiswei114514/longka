@@ -14,23 +14,14 @@
 </head>
 <body>
   <main class="shell">
-    <section id="lock-view" class="lock-view" aria-labelledby="lock-title">
-      <div class="lock-panel">
+    <section id="startup-view" class="startup-view" aria-labelledby="startup-title">
+      <div class="startup-panel">
         <img class="brand-mark" src="mark.svg" alt="">
         <div>
-          <h1 id="lock-title">笼卡管理</h1>
-          <p id="lock-copy" class="muted">输入存储密码</p>
+          <h1 id="startup-title">笼卡管理</h1>
+          <p id="startup-status" class="muted" role="status">正在打开...</p>
         </div>
-        <label class="field wide">
-          <span>存储密码</span>
-          <input id="password" type="password" autocomplete="current-password" minlength="4">
-        </label>
-        <label id="confirm-password-field" class="field wide hidden">
-          <span>确认密码</span>
-          <input id="confirm-password" type="password" autocomplete="new-password" minlength="4">
-        </label>
-        <p id="lock-error" class="form-error" role="alert"></p>
-        <button id="unlock-button" class="primary wide" type="button">解锁</button>
+        <span class="startup-spinner" aria-hidden="true"></span>
       </div>
     </section>
 
@@ -43,7 +34,6 @@
             <p id="header-location" class="muted">未选择笼位</p>
           </div>
         </div>
-        <button id="lock-button" class="quiet" type="button">锁定</button>
       </header>
 
       <nav class="tabs" aria-label="主视图">
