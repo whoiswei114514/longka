@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#146c5a">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <title>笼卡管理 Debug</title>
+  <link rel="icon" href="../mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../styles.css">
+  <link rel="stylesheet" href="debug.css">
+</head>
+<body>
+  <main class="shell debug-shell">
+    <section id="debug-startup" class="startup-view" aria-labelledby="startup-title">
+      <div class="startup-panel">
+        <img class="brand-mark" src="../mark.svg" alt="">
+        <div>
+          <h1 id="startup-title">笼卡管理 Debug</h1>
+          <p id="startup-status" class="muted" role="status">正在打开...</p>
+        </div>
+        <span class="startup-spinner" aria-hidden="true"></span>
+      </div>
+    </section>
+
+    <section id="debug-app" class="debug-app hidden">
+      <header class="debug-header">
+        <div class="brand-row">
+          <img class="header-mark" src="../mark.svg" alt="">
+          <div>
+            <h1>笼卡管理 Debug</h1>
+            <p id="save-state" class="muted">本机配置</p>
+          </div>
+        </div>
+        <a class="quiet-link" href="../">返回</a>
+      </header>
+
+      <form id="debug-form" novalidate>
+        <section class="debug-section" aria-labelledby="api-title">
+          <div class="section-head">
+            <h2 id="api-title">API</h2>
+            <button id="test-api-button" class="quiet compact" type="button">测试连接</button>
+          </div>
+          <div class="debug-grid two-columns">
+            <label class="field wide">
+              <span>Base URL</span>
+              <input id="api-base-url" type="url" inputmode="url" autocomplete="off" spellcheck="false">
+            </label>
+            <label class="field">
+              <span>模型 ID</span>
+              <input id="api-model-id" autocomplete="off" spellcheck="false">
+            </label>
+            <label class="field">
+              <span>超时（毫秒）</span>
+              <input id="api-timeout" type="number" min="5000" max="120000" step="1000" inputmode="numeric">
+            </label>
+            <label class="field wide">
+              <span>API Key</span>
+              <input id="api-key" type="password" autocomplete="off" spellcheck="false">
+            </label>
+          </div>
+          <label class="check-row">
+            <input id="show-api-key" type="checkbox">
+            <span>显示 API Key</span>
+          </label>
+          <pre id="api-test-result" class="debug-output hidden" aria-live="polite"></pre>
+        </section>
+
+        <section class="debug-section" aria-labelledby="models-title">
+          <div class="section-head">
+            <h2 id="models-title">本地模型</h2>
+            <label class="switch-row">
+              <input id="use-custom-models" type="checkbox">
+              <span>启用自定义模型</span>
+            </label>
+          </div>
+          <div id="model-list" class="model-list">
+            <article class="model-row" data-slot="detector">
+              <div class="model-copy">
+                <strong>文本检测 ONNX</strong>
+                <span class="model-status">内置模型</span>
+              </div>
+              <div class="model-actions">
+                <label class="quiet file-button" for="detector-file">上传</label>
+                <input id="detector-file" class="visually-hidden model-file" type="file" accept=".onnx,application/octet-stream" data-slot="detector">
+                <button class="quiet delete-model" type="button" data-slot="detector" disabled>删除</button>
+              </div>
+            </article>
+            <article class="model-row" data-slot="recognizer">
+              <div class="model-copy">
+                <strong>文本识别 ONNX</strong>
+                <span class="model-status">内置模型</span>
+              </div>
+              <div class="model-actions">
+                <label class="quiet file-button" for="recognizer-file">上传</label>
+                <input id="recognizer-file" class="visually-hidden model-file" type="file" accept=".onnx,application/octet-stream" data-slot="recognizer">
+                <button class="quiet delete-model" type="button" data-slot="recognizer" disabled>删除</button>
+              </div>
+            </article>
+            <article class="model-row" data-slot="dictionary">
+              <div class="model-copy">
+                <strong>识别字典</strong>
+                <span class="model-status">内置字典</span>
+              </div>
+              <div class="model-actions">
+                <label class="quiet file-button" for="dictionary-file">上传</label>
+                <input id="dictionary-file" class="visually-hidden model-file" type="file" accept=".json,.txt,application/json,text/plain" data-slot="dictionary">
+                <button class="quiet delete-model" type="button" data-slot="dictionary" disabled>删除</button>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="debug-section" aria-labelledby="ocr-title">
+          <h2 id="ocr-title">OCR 参数</h2>
+          <div class="debug-grid three-columns">
+            <label class="field">
+              <span>执行后端</span>
+              <select id="ocr-provider">
+                <option value="wasm">WASM</option>
+                <option value="webgpu">WebGPU</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>检测长边</span>
+              <input id="det-limit" type="number" min="320" max="2560" step="32" inputmode="numeric">
+            </label>
+            <label class="field">
+              <span>最小文本框</span>
+              <input id="det-min-size" type="number" min="1" max="32" step="1" inputmode="numeric">
+            </label>
+            <label class="field">
+              <span>检测阈值</span>
+              <input id="det-thresh" type="number" min="0.01" max="0.99" step="0.01" inputmode="decimal">
+            </label>
+            <label class="field">
+              <span>文本框阈值</span>
+              <input id="det-box-thresh" type="number" min="0.01" max="0.99" step="0.01" inputmode="decimal">
+            </label>
+            <label class="field">
+              <span>文本框扩张</span>
+              <input id="det-unclip" type="number" min="1" max="3" step="0.1" inputmode="decimal">
+            </label>
+            <label class="field">
+              <span>识别阈值</span>
+              <input id="rec-thresh" type="number" min="0.01" max="0.99" step="0.01" inputmode="decimal">
+            </label>
+          </div>
+          <label class="check-row">
+            <input id="show-raw-text" type="checkbox">
+            <span>显示 OCR 原始文本</span>
+          </label>
+        </section>
+
+        <section class="debug-section" aria-labelledby="self-test-title">
+          <div class="section-head">
+            <h2 id="self-test-title">OCR 自检</h2>
+            <button id="run-ocr-test" class="quiet compact" type="button" disabled>运行</button>
+          </div>
+          <div class="test-input-row">
+            <label class="primary file-button" for="ocr-test-file">选择照片</label>
+            <input id="ocr-test-file" class="visually-hidden" type="file" accept="image/*">
+            <span id="ocr-test-file-name" class="muted">未选择</span>
+          </div>
+          <img id="ocr-test-preview" class="debug-preview hidden" alt="OCR 自检照片">
+          <progress id="ocr-test-progress" class="hidden" max="1"></progress>
+          <pre id="ocr-test-result" class="debug-output hidden" aria-live="polite"></pre>
+        </section>
+
+        <section class="debug-section" aria-labelledby="diagnostics-title">
+          <h2 id="diagnostics-title">诊断</h2>
+          <dl id="diagnostics" class="diagnostics"></dl>
+        </section>
+
+        <p id="form-error" class="form-error" role="alert"></p>
+        <footer class="debug-actions">
+          <button id="reset-debug" class="danger-action" type="button">重置 Debug</button>
+          <button id="save-debug" class="primary" type="submit">保存配置</button>
+        </footer>
+      </form>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="debug.js"></script>
+</body>
+</html>

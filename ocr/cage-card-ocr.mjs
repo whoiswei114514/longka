@@ -1,4 +1,9 @@
 import { runOcr } from "./ppocr-engine.mjs";
+import {
+  getDebugModelBuffer,
+  listDebugModels,
+  loadDebugSettings
+} from "../debug-store.mjs";
 
 const OPTIONS = Object.freeze({
   modelSize: "small",
@@ -40,9 +45,10 @@ export async function runCageCardOcr(file, onProgress = () => {}) {
   if (!(file instanceof Blob)) {
     throw new Error("请选择笼卡照片");
   }
+  const runtime = await resolveOcrRuntime();
   onProgress("解码照片");
   const canvas = await imageToCanvas(file, 1800);
-  const result = await runOcr(canvas, OPTIONS, (stage, detail) => {
+  const result = await runOcr(canvas, runtime.options, (stage, detail) => {
     onProgress(detail ? `${stage}：${detail}` : stage);
   });
   onProgress("整理识别结果");
@@ -52,9 +58,85 @@ export async function runCageCardOcr(file, onProgress = () => {}) {
     lines: result.lines,
     rawText: result.formattedText,
     timing: result.timing,
+    modelLabel: runtime.modelLabel,
+    showRawText: runtime.showRawText,
     imageWidth: canvas.width,
     imageHeight: canvas.height
   };
+}
+
+async function resolveOcrRuntime() {
+  let settings;
+  try {
+    settings = await loadDebugSettings();
+  } catch (error) {
+    console.warn("Debug OCR 配置读取失败，使用内置模型", error);
+    return { options: OPTIONS, modelLabel: "PP-OCRv6 Small", showRawText: true };
+  }
+  const debug = settings.ocr;
+  const options = {
+    ...OPTIONS,
+    provider: debug.provider,
+    detLimitSideLen: debug.detLimitSideLen,
+    detThresh: debug.detThresh,
+    detBoxThresh: debug.detBoxThresh,
+    detUnclipRatio: debug.detUnclipRatio,
+    detMinSize: debug.detMinSize,
+    recScoreThresh: debug.recScoreThresh
+  };
+  if (!debug.useCustomModels) {
+    return { options, modelLabel: "PP-OCRv6 Small", showRawText: debug.showRawText };
+  }
+  const metadata = await listDebugModels();
+  const bySlot = new Map(metadata.map((item) => [item.slot, item]));
+  if (!bySlot.has("detector") && !bySlot.has("recognizer")) {
+    throw new Error("自定义 OCR 已启用，但没有可用 ONNX");
+  }
+  const [detModel, recModel, dictionaryBuffer] = await Promise.all([
+    bySlot.has("detector") ? getDebugModelBuffer("detector") : null,
+    bySlot.has("recognizer") ? getDebugModelBuffer("recognizer") : null,
+    bySlot.has("dictionary") ? getDebugModelBuffer("dictionary") : null
+  ]);
+  const charDict = dictionaryBuffer ? parseDebugDictionary(dictionaryBuffer) : undefined;
+  const activeSlots = ["detector", "recognizer", "dictionary"].filter((slot) => bySlot.has(slot));
+  options.modelOverrides = {
+    cacheKey: activeSlots.map((slot) => `${slot}:${bySlot.get(slot).sha256}`).join("|"),
+    detModel: detModel || undefined,
+    recModel: recModel || undefined,
+    charDict
+  };
+  const labels = activeSlots.map((slot) => ({
+    detector: "检测",
+    recognizer: "识别",
+    dictionary: "字典"
+  })[slot]);
+  return {
+    options,
+    modelLabel: `自定义 OCR · ${labels.join("+")}`,
+    showRawText: debug.showRawText
+  };
+}
+
+function parseDebugDictionary(buffer) {
+  const text = new TextDecoder().decode(buffer).replace(/^\uFEFF/, "").trim();
+  if (!text) {
+    throw new Error("自定义识别字典为空");
+  }
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) {
+      const values = parsed.map((value) => String(value)).filter(Boolean);
+      if (values.length) {
+        return values;
+      }
+    }
+  } catch (_) {
+  }
+  const values = text.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+  if (!values.length) {
+    throw new Error("自定义识别字典格式无效");
+  }
+  return values;
 }
 
 export function parseCageCardFields(lines) {

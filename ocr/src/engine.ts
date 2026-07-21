@@ -21,7 +21,8 @@ interface LoadedModels {
 const cache = new Map<string, Promise<LoadedModels>>();
 
 function cacheKey(opts: OcrOptions): string {
-  return `${opts.modelSize}:${opts.provider}:${opts.threadCount}`;
+  const models = opts.modelOverrides?.cacheKey ?? "builtin";
+  return `${opts.modelSize}:${opts.provider}:${opts.threadCount}:${models}`;
 }
 
 /** 加载（并缓存）指定规格与后端的检测/识别模型 */
@@ -37,16 +38,21 @@ async function getModels(opts: OcrOptions): Promise<LoadedModels> {
         executionProviders: eps,
         graphOptimizationLevel: "all",
       };
+      const overrides = opts.modelOverrides;
       const [det, rec, charDict] = await Promise.all([
         ort.InferenceSession.create(
-          new URL("./models/det/inference.onnx", import.meta.url).href,
+          overrides?.detModel
+            ?? new URL("./models/det/inference.onnx", import.meta.url).href,
           sessOpts,
         ),
         ort.InferenceSession.create(
-          new URL("./models/rec/inference.onnx", import.meta.url).href,
+          overrides?.recModel
+            ?? new URL("./models/rec/inference.onnx", import.meta.url).href,
           sessOpts,
         ),
-        loadCharDict(opts.modelSize),
+        overrides?.charDict
+          ? Promise.resolve(overrides.charDict)
+          : loadCharDict(opts.modelSize),
       ]);
       return { ort, det, rec, charDict };
     })();

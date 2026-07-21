@@ -9,6 +9,13 @@ export type ExecutionProvider = "wasm" | "webgpu";
 /** 场景预设配置名称 */
 export type PresetName = "default" | "fast" | "accurate" | "noisy";
 
+export interface OcrModelOverrides {
+  cacheKey: string;
+  detModel?: ArrayBuffer;
+  recModel?: ArrayBuffer;
+  charDict?: string[];
+}
+
 /** 场景预设参数配置 */
 export interface PresetConfig {
   name: PresetName;
@@ -92,6 +99,8 @@ export interface OcrOptions {
   recScoreThresh: number;
   /** ONNX 推理线程数（仅 CPU 后端生效） */
   threadCount: number;
+  /** Debug 页面提供的模型覆盖 */
+  modelOverrides?: OcrModelOverrides;
 }
 
 /** PP-OCRv6 推荐缺省参数（参考 ppocrv6-studio 实践经验） */

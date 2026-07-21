@@ -43,6 +43,7 @@
     photoInput: byId("photo-input"),
     ocrButton: byId("ocr-button"),
     ocrPanel: byId("ocr-panel"),
+    ocrModelLabel: byId("ocr-model-label"),
     ocrStatus: byId("ocr-status"),
     ocrProgress: byId("ocr-progress"),
     ocrDetails: byId("ocr-details"),
@@ -392,9 +393,10 @@
       const filled = [result.sampleNumber, result.sampleName, result.animalNumber]
         .filter(Boolean).length;
       elements.ocrStatus.textContent = `${filled}/3 项 · ${(result.timing.total / 1000).toFixed(1)} 秒`;
+      elements.ocrModelLabel.textContent = result.modelLabel || "PP-OCRv6 Small";
       elements.ocrProgress.value = 1;
       elements.ocrRawText.textContent = result.rawText || "未识别到文字";
-      elements.ocrDetails.classList.remove("hidden");
+      elements.ocrDetails.classList.toggle("hidden", result.showRawText === false);
       showToast(filled ? "本地 OCR 已回填" : "未识别到笼卡字段");
     } catch (error) {
       elements.ocrProgress.value = 0;
@@ -423,6 +425,7 @@
   function resetOcrPanel() {
     state.ocrRunning = false;
     elements.ocrButton.textContent = "本地 OCR";
+    elements.ocrModelLabel.textContent = "PP-OCRv6 Small";
     elements.ocrPanel.classList.add("hidden");
     elements.ocrProgress.value = 0;
     elements.ocrStatus.textContent = "等待识别";
