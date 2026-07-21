@@ -48,9 +48,26 @@ export async function runCageCardOcr(file, onProgress = () => {}) {
   const runtime = await resolveOcrRuntime();
   onProgress("解码照片");
   const canvas = await imageToCanvas(file, 1800);
-  const result = await runOcr(canvas, runtime.options, (stage, detail) => {
-    onProgress(detail ? `${stage}：${detail}` : stage);
-  });
+  const attempts = buildOcrAttempts(runtime);
+  const failures = [];
+  let result;
+  let activeAttempt;
+  for (const attempt of attempts) {
+    try {
+      activeAttempt = attempt;
+      result = await runOcr(canvas, attempt.options, (stage, detail) => {
+        onProgress(detail ? `${stage}：${detail}` : stage);
+      });
+      break;
+    } catch (error) {
+      const detail = errorMessage(error);
+      failures.push(`${attempt.label}: ${detail}`);
+      onProgress(`${attempt.label}失败，正在回退`);
+    }
+  }
+  if (!result || !activeAttempt) {
+    throw new Error(failures.join("；") || "OCR 引擎不可用");
+  }
   onProgress("整理识别结果");
   const fields = parseCageCardFields(result.lines);
   return {
@@ -58,11 +75,37 @@ export async function runCageCardOcr(file, onProgress = () => {}) {
     lines: result.lines,
     rawText: result.formattedText,
     timing: result.timing,
-    modelLabel: runtime.modelLabel,
+    modelLabel: activeAttempt.label,
+    modelWarning: failures.join("；"),
     showRawText: runtime.showRawText,
     imageWidth: canvas.width,
     imageHeight: canvas.height
   };
+}
+
+function buildOcrAttempts(runtime) {
+  const attempts = [];
+  const seen = new Set();
+  const add = (label, options) => {
+    const key = `${options.provider}:${options.modelOverrides?.cacheKey || "builtin"}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      attempts.push({ label, options });
+    }
+  };
+  add(runtime.modelLabel, runtime.options);
+  if (runtime.options.provider === "webgpu") {
+    add(`${runtime.modelLabel} · WASM 回退`, { ...runtime.options, provider: "wasm" });
+  }
+  if (runtime.isCustom) {
+    const builtin = { ...runtime.options };
+    delete builtin.modelOverrides;
+    add("PP-OCRv6 Small · 内置回退", builtin);
+    if (builtin.provider === "webgpu") {
+      add("PP-OCRv6 Small · 内置 WASM 回退", { ...builtin, provider: "wasm" });
+    }
+  }
+  return attempts;
 }
 
 async function resolveOcrRuntime() {
@@ -71,7 +114,7 @@ async function resolveOcrRuntime() {
     settings = await loadDebugSettings();
   } catch (error) {
     console.warn("Debug OCR 配置读取失败，使用内置模型", error);
-    return { options: OPTIONS, modelLabel: "PP-OCRv6 Small", showRawText: true };
+    return { options: OPTIONS, modelLabel: "PP-OCRv6 Small", showRawText: true, isCustom: false };
   }
   const debug = settings.ocr;
   const options = {
@@ -85,7 +128,7 @@ async function resolveOcrRuntime() {
     recScoreThresh: debug.recScoreThresh
   };
   if (!debug.useCustomModels) {
-    return { options, modelLabel: "PP-OCRv6 Small", showRawText: debug.showRawText };
+    return { options, modelLabel: "PP-OCRv6 Small", showRawText: debug.showRawText, isCustom: false };
   }
   const metadata = await listDebugModels();
   const bySlot = new Map(metadata.map((item) => [item.slot, item]));
@@ -113,8 +156,13 @@ async function resolveOcrRuntime() {
   return {
     options,
     modelLabel: `自定义 OCR · ${labels.join("+")}`,
-    showRawText: debug.showRawText
+    showRawText: debug.showRawText,
+    isCustom: true
   };
+}
+
+function errorMessage(error) {
+  return error && error.message ? error.message : String(error || "未知错误");
 }
 
 function parseDebugDictionary(buffer) {

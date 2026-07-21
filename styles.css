@@ -370,6 +370,21 @@ fieldset {
   font: 0.76rem/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 
+.remote-review-row {
+  min-height: 60px;
+  padding: 8px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  background: #fbfcfc;
+}
+
+.remote-review-row .muted {
+  margin: 0;
+}
+
 .photo-preview img {
   display: block;
   width: 100%;
@@ -518,6 +533,7 @@ fieldset {
   transform: translate(-50%, 8px);
   transition: opacity 160ms ease, transform 160ms ease;
   text-align: center;
+  overflow-wrap: anywhere;
 }
 
 .toast.show {

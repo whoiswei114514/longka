@@ -22,6 +22,9 @@
     editingId: null,
     photoUrl: "",
     ocrRunning: false,
+    mimoConfigured: false,
+    mimoRunning: false,
+    lastOcrRaw: "",
     queryLocation: readQueryLocation(),
     deleteCandidate: "",
     deleteTimer: 0
@@ -48,6 +51,8 @@
     ocrProgress: byId("ocr-progress"),
     ocrDetails: byId("ocr-details"),
     ocrRawText: byId("ocr-raw-text"),
+    remoteReviewRow: byId("remote-review-row"),
+    mimoReviewButton: byId("mimo-review-button"),
     photoPreviewWrap: byId("photo-preview-wrap"),
     photoPreview: byId("photo-preview"),
     removePhotoButton: byId("remove-photo-button"),
@@ -99,6 +104,7 @@
       elements.appView.classList.remove("hidden");
       resetForm(true);
       renderRecords();
+      await configureMimoReview();
     } catch (error) {
       state.key = null;
       state.records = [];
@@ -117,6 +123,7 @@
     });
     elements.photoInput.addEventListener("change", previewPhoto);
     elements.ocrButton.addEventListener("click", runLocalOcr);
+    elements.mimoReviewButton.addEventListener("click", runMimoReview);
     elements.removePhotoButton.addEventListener("click", clearPhoto);
     elements.recordSearch.addEventListener("input", renderRecords);
     elements.recordList.addEventListener("click", handleRecordAction);
@@ -354,6 +361,7 @@
     elements.photoPreviewWrap.classList.remove("hidden");
     elements.removePhotoButton.classList.remove("hidden");
     elements.ocrButton.disabled = false;
+    elements.mimoReviewButton.disabled = !state.mimoConfigured;
     resetOcrPanel();
   }
 
@@ -364,16 +372,18 @@
     elements.photoPreviewWrap.classList.add("hidden");
     elements.removePhotoButton.classList.add("hidden");
     elements.ocrButton.disabled = true;
+    elements.mimoReviewButton.disabled = true;
     resetOcrPanel();
   }
 
   async function runLocalOcr() {
     const file = elements.photoInput.files && elements.photoInput.files[0];
-    if (!file || state.ocrRunning) {
+    if (!file || state.ocrRunning || state.mimoRunning) {
       return;
     }
     state.ocrRunning = true;
     elements.ocrButton.disabled = true;
+    elements.mimoReviewButton.disabled = true;
     elements.ocrButton.textContent = "识别中...";
     elements.ocrPanel.classList.remove("hidden");
     elements.ocrDetails.classList.add("hidden");
@@ -396,19 +406,104 @@
       elements.ocrModelLabel.textContent = result.modelLabel || "PP-OCRv6 Small";
       elements.ocrProgress.value = 1;
       elements.ocrRawText.textContent = result.rawText || "未识别到文字";
+      state.lastOcrRaw = result.rawText || "";
+      if (result.modelWarning) {
+        elements.ocrStatus.textContent += " · 已回退";
+        elements.ocrRawText.textContent = `模型回退：${result.modelWarning}\n\n${elements.ocrRawText.textContent}`;
+      }
       elements.ocrDetails.classList.toggle("hidden", result.showRawText === false);
       showToast(filled ? "本地 OCR 已回填" : "未识别到笼卡字段");
     } catch (error) {
       elements.ocrProgress.value = 0;
-      elements.ocrStatus.textContent = "识别失败";
-      elements.ocrRawText.textContent = error && error.message ? error.message : String(error);
+      const detail = errorMessage(error);
+      elements.ocrStatus.textContent = `失败：${shortError(detail)}`;
+      elements.ocrRawText.textContent = detail;
       elements.ocrDetails.classList.remove("hidden");
-      showToast("本地 OCR 失败");
+      showToast(`本地 OCR 失败：${shortError(detail)}`);
     } finally {
       state.ocrRunning = false;
-      elements.ocrButton.disabled = false;
+      elements.ocrButton.disabled = state.mimoRunning || !file;
+      elements.mimoReviewButton.disabled = state.mimoRunning || !state.mimoConfigured || !file;
       elements.ocrButton.textContent = "再次 OCR";
     }
+  }
+
+  async function configureMimoReview() {
+    try {
+      const module = await import("./mimo-client.mjs");
+      state.mimoConfigured = await module.isMimoConfigured();
+    } catch (_) {
+      state.mimoConfigured = false;
+    }
+    elements.remoteReviewRow.classList.toggle("hidden", !state.mimoConfigured);
+    const file = elements.photoInput.files && elements.photoInput.files[0];
+    elements.mimoReviewButton.disabled = !state.mimoConfigured || !file;
+  }
+
+  async function runMimoReview() {
+    const file = elements.photoInput.files && elements.photoInput.files[0];
+    if (!file || !state.mimoConfigured || state.mimoRunning || state.ocrRunning) {
+      return;
+    }
+    const snapshot = {
+      sampleNumber: elements.sampleNumber.value,
+      sampleName: elements.sampleName.value,
+      animalNumber: elements.animalNumber.value
+    };
+    state.mimoRunning = true;
+    elements.mimoReviewButton.disabled = true;
+    elements.mimoReviewButton.textContent = "复核中...";
+    elements.ocrButton.disabled = true;
+    elements.ocrPanel.classList.remove("hidden");
+    elements.ocrDetails.classList.add("hidden");
+    elements.ocrProgress.removeAttribute("value");
+    elements.ocrModelLabel.textContent = "Mimo 复核";
+    elements.ocrStatus.textContent = "准备图片";
+    try {
+      const module = await import("./mimo-client.mjs");
+      const result = await module.reviewCageCardWithMimo(file, {
+        sampleNumber: snapshot.sampleNumber,
+        sampleName: snapshot.sampleName,
+        animalNumber: snapshot.animalNumber,
+        rawText: state.lastOcrRaw
+      }, (message) => {
+        elements.ocrStatus.textContent = message;
+      });
+      applyMimoValue(elements.sampleNumber, result.sampleNumber, snapshot.sampleNumber);
+      applyMimoValue(elements.sampleName, result.sampleName, snapshot.sampleName);
+      applyMimoValue(elements.animalNumber, result.animalNumber, snapshot.animalNumber);
+      const filled = [result.sampleNumber, result.sampleName, result.animalNumber].filter(Boolean).length;
+      elements.ocrStatus.textContent = `${filled}/3 项 · ${(result.timing / 1000).toFixed(1)} 秒`;
+      elements.ocrProgress.value = 1;
+      elements.ocrRawText.textContent = [
+        `样品编号：${result.sampleNumber || "-"}`,
+        `样品名称：${result.sampleName || "-"}`,
+        `动物编号：${result.animalNumber || "-"}`,
+        result.reason ? `说明：${result.reason}` : ""
+      ].filter(Boolean).join("\n");
+      elements.ocrDetails.classList.remove("hidden");
+      showToast(filled ? "Mimo 复核已回填" : "Mimo 未返回有效字段");
+    } catch (error) {
+      const detail = errorMessage(error);
+      elements.ocrProgress.value = 0;
+      elements.ocrStatus.textContent = `失败：${shortError(detail)}`;
+      elements.ocrRawText.textContent = detail;
+      elements.ocrDetails.classList.remove("hidden");
+      showToast(`Mimo 复核失败：${shortError(detail)}`);
+    } finally {
+      state.mimoRunning = false;
+      elements.mimoReviewButton.disabled = !state.mimoConfigured || !file;
+      elements.mimoReviewButton.textContent = "再次 Mimo 复核";
+      elements.ocrButton.disabled = !file;
+    }
+  }
+
+  function applyMimoValue(field, value, initialValue) {
+    if (!value || field.value !== initialValue) {
+      return;
+    }
+    field.value = value;
+    field.classList.remove("invalid");
   }
 
   function applyOcrValue(field, value, isValid) {
@@ -424,7 +519,9 @@
 
   function resetOcrPanel() {
     state.ocrRunning = false;
+    state.lastOcrRaw = "";
     elements.ocrButton.textContent = "本地 OCR";
+    elements.mimoReviewButton.textContent = "Mimo 复核";
     elements.ocrModelLabel.textContent = "PP-OCRv6 Small";
     elements.ocrPanel.classList.add("hidden");
     elements.ocrProgress.value = 0;
@@ -746,6 +843,15 @@
 
   function clean(value) {
     return value == null ? "" : String(value).trim();
+  }
+
+  function errorMessage(error) {
+    return error && error.message ? error.message : String(error || "未知错误");
+  }
+
+  function shortError(value) {
+    const cleaned = clean(value).replace(/\s+/g, " ");
+    return cleaned.length > 72 ? `${cleaned.slice(0, 72)}...` : cleaned;
   }
 
   function byId(id) {

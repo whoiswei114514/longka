@@ -284,7 +284,8 @@ async function testApiConnection() {
         model: settings.api.modelId,
         messages: [{ role: "user", content: "只回复 OK" }],
         temperature: 0,
-        max_tokens: 8
+        max_completion_tokens: 8,
+        thinking: { type: "disabled" }
       }),
       signal: controller.signal
     });
